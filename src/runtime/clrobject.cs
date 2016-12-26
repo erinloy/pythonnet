@@ -30,6 +30,10 @@ namespace Python.Runtime
             this.pyHandle = py;
             this.gcHandle = gc;
             inst = ob;
+
+            // Fix the BaseException args (and __cause__ in case of Python 3)
+            // slot if wrapping a CLR exception
+            Exceptions.SetArgsAndCause(py);
         }
 
 

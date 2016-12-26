@@ -51,9 +51,9 @@ namespace Python.Runtime
             Runtime.PyDict_SetItemString(dict, "__file__", pyfilename);
             Runtime.PyDict_SetItemString(dict, "__doc__", pydocstring);
             Runtime.PyDict_SetItemString(dict, "__class__", pycls);
-            Runtime.Decref(pyname);
-            Runtime.Decref(pyfilename);
-            Runtime.Decref(pydocstring);
+            Runtime.XDecref(pyname);
+            Runtime.XDecref(pyfilename);
+            Runtime.XDecref(pydocstring);
 
             Marshal.WriteIntPtr(this.pyHandle, ObjectOffset.DictOffset(this.pyHandle), dict);
 
@@ -202,20 +202,6 @@ namespace Python.Runtime
                 if (m == null)
                 {
                     ManagedType attr = this.GetAttribute(name, true);
-                    if (Runtime.wrap_exceptions)
-                    {
-                        if (attr is ExceptionClassObject)
-                        {
-                            ExceptionClassObject c = attr as ExceptionClassObject;
-                            if (c != null)
-                            {
-                                IntPtr p = attr.pyHandle;
-                                IntPtr r = Exceptions.GetExceptionClassWrapper(p);
-                                Runtime.PyDict_SetItemString(dict, name, r);
-                                Runtime.Incref(r);
-                            }
-                        }
-                    }
                 }
             }
         }
@@ -288,14 +274,14 @@ namespace Python.Runtime
             IntPtr op = Runtime.PyDict_GetItem(self.dict, key);
             if (op != IntPtr.Zero)
             {
-                Runtime.Incref(op);
+                Runtime.XIncref(op);
                 return op;
             }
 
             string name = Runtime.GetManagedString(key);
             if (name == "__dict__")
             {
-                Runtime.Incref(self.dict);
+                Runtime.XIncref(self.dict);
                 return self.dict;
             }
 
@@ -307,27 +293,7 @@ namespace Python.Runtime
                 return IntPtr.Zero;
             }
 
-            // XXX - hack required to recognize exception types. These types
-            // may need to be wrapped in old-style class wrappers in versions
-            // of Python where new-style classes cannot be used as exceptions.
-
-            if (Runtime.wrap_exceptions)
-            {
-                if (attr is ExceptionClassObject)
-                {
-                    ExceptionClassObject c = attr as ExceptionClassObject;
-                    if (c != null)
-                    {
-                        IntPtr p = attr.pyHandle;
-                        IntPtr r = Exceptions.GetExceptionClassWrapper(p);
-                        Runtime.PyDict_SetItemString(self.dict, name, r);
-                        Runtime.Incref(r);
-                        return r;
-                    }
-                }
-            }
-
-            Runtime.Incref(attr.pyHandle);
+            Runtime.XIncref(attr.pyHandle);
             return attr.pyHandle;
         }
 
@@ -371,7 +337,7 @@ namespace Python.Runtime
                 IntPtr mro = Marshal.ReadIntPtr(type, TypeOffset.tp_mro);
                 IntPtr ext = Runtime.ExtendTuple(mro, Runtime.PyModuleType);
                 Marshal.WriteIntPtr(type, TypeOffset.tp_mro, ext);
-                Runtime.Decref(mro);
+                Runtime.XDecref(mro);
                 hacked = true;
             }
         }

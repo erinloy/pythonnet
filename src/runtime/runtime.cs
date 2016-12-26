@@ -212,7 +212,6 @@ namespace Python.Runtime
         internal static Object IsFinalizingLock = new Object();
         internal static bool IsFinalizing = false;
 
-        internal static bool wrap_exceptions;
         internal static bool is32bit;
 
         /// <summary>
@@ -233,13 +232,13 @@ namespace Python.Runtime
             }
 
 #if (PYTHON32 || PYTHON33 || PYTHON34 || PYTHON35)
-        IntPtr op = Runtime.PyImport_ImportModule("builtins");
-        IntPtr dict = Runtime.PyObject_GetAttrString(op, "__dict__");
-        PyNotImplemented = Runtime.PyObject_GetAttrString(op, "NotImplemented");
+            IntPtr op = Runtime.PyImport_ImportModule("builtins");
+            IntPtr dict = Runtime.PyObject_GetAttrString(op, "__dict__");
 #else
             IntPtr dict = Runtime.PyImport_GetModuleDict();
             IntPtr op = Runtime.PyDict_GetItemString(dict, "__builtin__");
 #endif
+            PyNotImplemented = Runtime.PyObject_GetAttrString(op, "NotImplemented");
             PyBaseObjectType = Runtime.PyObject_GetAttrString(op, "object");
 
             PyModuleType = Runtime.PyObject_Type(op);
@@ -253,50 +252,57 @@ namespace Python.Runtime
 
             op = Runtime.PyObject_GetAttrString(dict, "keys");
             PyMethodType = Runtime.PyObject_Type(op);
-            Runtime.Decref(op);
+            Runtime.XDecref(op);
+
+            // For some arcane reason, builtins.__dict__.__setitem__ is *not*
+            // a wrapper_descriptor, even though dict.__setitem__ is.
+            //
+            // object.__init__ seems safe, though.
+            op = Runtime.PyObject_GetAttrString(PyBaseObjectType, "__init__");
+            PyWrapperDescriptorType = Runtime.PyObject_Type(op);
+            Runtime.XDecref(op);
 
 #if (PYTHON32 || PYTHON33 || PYTHON34 || PYTHON35)
-        Runtime.Decref(dict);
-        Runtime.Decref(op);
+            Runtime.XDecref(dict);
 #endif
 
             op = Runtime.PyString_FromString("string");
             PyStringType = Runtime.PyObject_Type(op);
-            Runtime.Decref(op);
+            Runtime.XDecref(op);
 
             op = Runtime.PyUnicode_FromString("unicode");
             PyUnicodeType = Runtime.PyObject_Type(op);
-            Runtime.Decref(op);
+            Runtime.XDecref(op);
 
 #if (PYTHON32 || PYTHON33 || PYTHON34 || PYTHON35)
-        op = Runtime.PyBytes_FromString("bytes");
-        PyBytesType = Runtime.PyObject_Type(op);
-        Runtime.Decref(op);
+            op = Runtime.PyBytes_FromString("bytes");
+            PyBytesType = Runtime.PyObject_Type(op);
+            Runtime.XDecref(op);
 #endif
 
             op = Runtime.PyTuple_New(0);
             PyTupleType = Runtime.PyObject_Type(op);
-            Runtime.Decref(op);
+            Runtime.XDecref(op);
 
             op = Runtime.PyList_New(0);
             PyListType = Runtime.PyObject_Type(op);
-            Runtime.Decref(op);
+            Runtime.XDecref(op);
 
             op = Runtime.PyDict_New();
             PyDictType = Runtime.PyObject_Type(op);
-            Runtime.Decref(op);
+            Runtime.XDecref(op);
 
             op = Runtime.PyInt_FromInt32(0);
             PyIntType = Runtime.PyObject_Type(op);
-            Runtime.Decref(op);
+            Runtime.XDecref(op);
 
             op = Runtime.PyLong_FromLong(0);
             PyLongType = Runtime.PyObject_Type(op);
-            Runtime.Decref(op);
+            Runtime.XDecref(op);
 
             op = Runtime.PyFloat_FromDouble(0);
             PyFloatType = Runtime.PyObject_Type(op);
-            Runtime.Decref(op);
+            Runtime.XDecref(op);
 
 #if (PYTHON32 || PYTHON33 || PYTHON34 || PYTHON35)
         PyClassType = IntPtr.Zero;
@@ -311,10 +317,10 @@ namespace Python.Runtime
             IntPtr i = Runtime.PyInstance_New(c, IntPtr.Zero, IntPtr.Zero);
             PyInstanceType = Runtime.PyObject_Type(i);
 
-            Runtime.Decref(s);
-            Runtime.Decref(i);
-            Runtime.Decref(c);
-            Runtime.Decref(d);
+            Runtime.XDecref(s);
+            Runtime.XDecref(i);
+            Runtime.XDecref(c);
+            Runtime.XDecref(d);
 #endif
 
             Error = new IntPtr(-1);
@@ -332,25 +338,6 @@ namespace Python.Runtime
 #endif
 #endif
 
-
-            // Determine whether we need to wrap exceptions for versions of
-            // of the Python runtime that do not allow new-style classes to
-            // be used as exceptions (Python versions 2.4 and lower).
-
-#if (PYTHON25 || PYTHON26 || PYTHON27 || PYTHON32 || PYTHON33 || PYTHON34 || PYTHON35)
-            wrap_exceptions = false;
-#else
-        IntPtr m = PyImport_ImportModule("exceptions");
-        Exceptions.ErrorCheck(m);
-        op = Runtime.PyObject_GetAttrString(m, "Exception");
-        Exceptions.ErrorCheck(op);
-        if (Runtime.PyObject_TYPE(op) == PyClassType) {
-            wrap_exceptions = true;
-        }
-        Runtime.Decref(op);
-        Runtime.Decref(m);
-#endif
-
             // Initialize modules that depend on the runtime class.
             AssemblyManager.Initialize();
             PyCLRMetaType = MetaType.Initialize();
@@ -363,7 +350,7 @@ namespace Python.Runtime
             IntPtr path = Runtime.PySys_GetObject("path");
             IntPtr item = Runtime.PyString_FromString(rtdir);
             Runtime.PyList_Append(path, item);
-            Runtime.Decref(item);
+            Runtime.XDecref(item);
             AssemblyManager.UpdatePath();
         }
 
@@ -395,6 +382,7 @@ namespace Python.Runtime
         internal static IntPtr PyInstanceType;
         internal static IntPtr PyCLRMetaType;
         internal static IntPtr PyMethodType;
+        internal static IntPtr PyWrapperDescriptorType;
 
         internal static IntPtr PyUnicodeType;
         internal static IntPtr PyStringType;
@@ -409,21 +397,22 @@ namespace Python.Runtime
         internal static IntPtr PyTypeType;
 
 #if (PYTHON32 || PYTHON33 || PYTHON34 || PYTHON35)
-    internal static IntPtr PyBytesType;
-    internal static IntPtr PyNotImplemented;
-    internal const int Py_LT = 0;
-    internal const int Py_LE = 1;
-    internal const int Py_EQ = 2;
-    internal const int Py_NE = 3;
-    internal const int Py_GT = 4;
-    internal static IntPtr _PyObject_NextNotImplemented;
+        internal static IntPtr PyBytesType;
+        internal static IntPtr _PyObject_NextNotImplemented;
 #endif
+
+        internal static IntPtr PyNotImplemented;
+        internal const int Py_LT = 0;
+        internal const int Py_LE = 1;
+        internal const int Py_EQ = 2;
+        internal const int Py_NE = 3;
+        internal const int Py_GT = 4;
+        internal const int Py_GE = 5;
 
         internal static IntPtr PyTrue;
         internal static IntPtr PyFalse;
         internal static IntPtr PyNone;
         internal static IntPtr Error;
-
 
         internal static IntPtr GetBoundArgTuple(IntPtr obj, IntPtr args)
         {
@@ -435,12 +424,12 @@ namespace Python.Runtime
             int size = Runtime.PyTuple_Size(args);
             IntPtr items = Runtime.PyTuple_New(size + 1);
             Runtime.PyTuple_SetItem(items, 0, obj);
-            Runtime.Incref(obj);
+            Runtime.XIncref(obj);
 
             for (int i = 0; i < size; i++)
             {
                 IntPtr item = Runtime.PyTuple_GetItem(args, i);
-                Runtime.Incref(item);
+                Runtime.XIncref(item);
                 Runtime.PyTuple_SetItem(items, i + 1, item);
             }
 
@@ -458,14 +447,14 @@ namespace Python.Runtime
             for (int i = 0; i < size; i++)
             {
                 item = Runtime.PyTuple_GetItem(t, i);
-                Runtime.Incref(item);
+                Runtime.XIncref(item);
                 Runtime.PyTuple_SetItem(items, i, item);
             }
 
             for (int n = 0; n < add; n++)
             {
                 item = args[n];
-                Runtime.Incref(item);
+                Runtime.XIncref(item);
                 Runtime.PyTuple_SetItem(items, size + n, item);
             }
 
@@ -488,7 +477,7 @@ namespace Python.Runtime
             if (!Runtime.PyTuple_Check(arg))
             {
                 args = Runtime.PyTuple_New(1);
-                Runtime.Incref(arg);
+                Runtime.XIncref(arg);
                 Runtime.PyTuple_SetItem(args, 0, arg);
                 free = true;
             }
@@ -532,7 +521,7 @@ namespace Python.Runtime
             }
             if (free)
             {
-                Runtime.Decref(args);
+                Runtime.XDecref(args);
             }
             return types;
         }
@@ -543,9 +532,10 @@ namespace Python.Runtime
         // (mostly for heavily used methods).
         //===================================================================
 
-        internal unsafe static void Incref(IntPtr op)
+        internal unsafe static void XIncref(IntPtr op)
         {
 #if (Py_DEBUG)
+        // according to Python doc, Py_IncRef() is Py_XINCREF() 
         Py_IncRef(op);
         return;
 #else
@@ -564,14 +554,11 @@ namespace Python.Runtime
 #endif
         }
 
-        internal unsafe static void Decref(IntPtr op)
+        internal static unsafe void XDecref(IntPtr op)
         {
-            if (op == IntPtr.Zero)
-            {
-                DebugUtil.Print("Decref(NULL)");
-            }
 #if (Py_DEBUG)
-    // Py_DecRef calls Python's Py_DECREF
+        // Py_DecRef calls Python's Py_DECREF
+        // according to Python doc, Py_DecRef() is Py_XDECREF()
         Py_DecRef(op);
         return;
 #else
@@ -958,7 +945,7 @@ namespace Python.Runtime
             PyObject_Type(IntPtr op)
         {
             IntPtr tp = PyObject_TYPE(op);
-            Runtime.Incref(tp);
+            Runtime.XIncref(tp);
             return tp;
         }
 
@@ -2150,6 +2137,11 @@ namespace Python.Runtime
         {
             return PyObject_TypeCheck(ob, Runtime.PyTypeType);
         }
+
+        [DllImport(Runtime.dll, CallingConvention = CallingConvention.Cdecl,
+            ExactSpelling = true, CharSet = CharSet.Ansi)]
+        internal unsafe static extern void
+            PyType_Modified(IntPtr type);
 
         [DllImport(Runtime.dll, CallingConvention = CallingConvention.Cdecl,
             ExactSpelling = true, CharSet = CharSet.Ansi)]

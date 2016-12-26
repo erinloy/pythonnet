@@ -92,7 +92,7 @@ namespace Python.Runtime
             // into python.
             if (IntPtr.Zero != dict)
             {
-                Runtime.Incref(dict);
+                Runtime.XIncref(dict);
                 using (PyDict clsDict = new PyDict(dict))
                 {
                     if (clsDict.HasKey("__assembly__") || clsDict.HasKey("__namespace__"))
@@ -171,7 +171,7 @@ namespace Python.Runtime
             IntPtr py__init__ = Runtime.PyString_FromString("__init__");
             IntPtr type = Runtime.PyObject_TYPE(obj);
             IntPtr init = Runtime._PyType_Lookup(type, py__init__);
-            Runtime.Decref(py__init__);
+            Runtime.XDecref(py__init__);
             Runtime.PyErr_Clear();
 
             if (init != IntPtr.Zero)
@@ -179,20 +179,20 @@ namespace Python.Runtime
                 IntPtr bound = Runtime.GetBoundArgTuple(obj, args);
                 if (bound == IntPtr.Zero)
                 {
-                    Runtime.Decref(obj);
+                    Runtime.XDecref(obj);
                     return IntPtr.Zero;
                 }
 
                 IntPtr result = Runtime.PyObject_Call(init, bound, kw);
-                Runtime.Decref(bound);
+                Runtime.XDecref(bound);
 
                 if (result == IntPtr.Zero)
                 {
-                    Runtime.Decref(obj);
+                    Runtime.XDecref(obj);
                     return IntPtr.Zero;
                 }
 
-                Runtime.Decref(result);
+                Runtime.XDecref(result);
             }
 
             return obj;
@@ -214,22 +214,30 @@ namespace Python.Runtime
             if (descr != IntPtr.Zero)
             {
                 IntPtr dt = Runtime.PyObject_TYPE(descr);
-                IntPtr fp = Marshal.ReadIntPtr(dt, TypeOffset.tp_descr_set);
-                if (fp != IntPtr.Zero)
+
+                if (dt == Runtime.PyWrapperDescriptorType
+                    || dt == Runtime.PyMethodType
+                    || typeof(ExtensionType).IsInstanceOfType(GetManagedObject(descr))
+                    )
                 {
-                    return NativeCall.Impl.Int_Call_3(fp, descr, name, value);
+                    IntPtr fp = Marshal.ReadIntPtr(dt, TypeOffset.tp_descr_set);
+                    if (fp != IntPtr.Zero)
+                    {
+                        return NativeCall.Impl.Int_Call_3(fp, descr, name, value);
+                    }
+                    else
+                    {
+                        Exceptions.SetError(Exceptions.AttributeError,
+                            "attribute is read-only");
+                        return -1;
+                    }
                 }
-                Exceptions.SetError(Exceptions.AttributeError,
-                    "attribute is read-only");
-                return -1;
             }
 
-            if (Runtime.PyObject_GenericSetAttr(tp, name, value) < 0)
-            {
-                return -1;
-            }
+            var res = Runtime.PyObject_GenericSetAttr(tp, name, value);
+            Runtime.PyType_Modified(tp);
 
-            return 0;
+            return res;
         }
 
         //====================================================================
@@ -264,7 +272,7 @@ namespace Python.Runtime
             }
 
             IntPtr op = Marshal.ReadIntPtr(tp, TypeOffset.ob_type);
-            Runtime.Decref(op);
+            Runtime.XDecref(op);
 
             // Delegate the rest of finalization the Python metatype. Note
             // that the PyType_Type implementation of tp_dealloc will call
@@ -281,8 +289,9 @@ namespace Python.Runtime
         {
             ClassBase cb = GetManagedObject(tp) as ClassBase;
 
-            if (cb == null) {
-                Runtime.Incref(Runtime.PyFalse);
+            if (cb == null)
+            {
+                Runtime.XIncref(Runtime.PyFalse);
                 return Runtime.PyFalse;
             }
 
@@ -298,14 +307,16 @@ namespace Python.Runtime
                 else
                     otherType = arg.GetPythonType();
 
-                if (Runtime.PyObject_TYPE(otherType.Handle) != PyCLRMetaType) {
-                    Runtime.Incref(Runtime.PyFalse);
+                if (Runtime.PyObject_TYPE(otherType.Handle) != PyCLRMetaType)
+                {
+                    Runtime.XIncref(Runtime.PyFalse);
                     return Runtime.PyFalse;
                 }
 
                 ClassBase otherCb = GetManagedObject(otherType.Handle) as ClassBase;
-                if (otherCb == null) {
-                    Runtime.Incref(Runtime.PyFalse);
+                if (otherCb == null)
+                {
+                    Runtime.XIncref(Runtime.PyFalse);
                     return Runtime.PyFalse;
                 }
 
